@@ -3,8 +3,8 @@ use bevy::prelude::Component;
 // region - Common Components
 #[derive(Component)]
 pub struct Velocity {
-    pub magnitude: f32,
-    pub angle: f32,
+    pub x: f32,
+    pub y: f32,
 }
 
 #[derive(Component)]

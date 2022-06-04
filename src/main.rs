@@ -3,7 +3,7 @@ use std::f32::consts::PI;
 use bevy::math::{vec2, vec3};
 use bevy::prelude::*;
 use bevy_prototype_lyon::prelude::*;
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 
 use crate::components::{Boid, Movable, Velocity};
 
@@ -60,7 +60,7 @@ fn boid_spawn_system(mut commands: Commands, win_size: Res<WinSize>) {
     };
     let mut rng = thread_rng();
 
-    let mut spawn_boid = |x: f32, y: f32, angle: f32| {
+    let mut spawn_boid = |x: f32, y: f32, x_comp: f32, y_comp| {
         commands
             .spawn_bundle(GeometryBuilder::build_as(
                 &shape,
@@ -76,18 +76,21 @@ fn boid_spawn_system(mut commands: Commands, win_size: Res<WinSize>) {
             ))
             .insert(Boid)
             .insert(Velocity {
-                magnitude: BOID_SPEED,
-                angle,
+                x: x_comp,
+                y: y_comp,
             })
             .insert(Movable);
     };
 
     // spawn boids
     for _ in 0..NUMBER_OF_BOIDS {
+        let angle = (rng.gen_range(0..360) as f32) * (PI / 180.);
+
         spawn_boid(
             rng.gen_range(-win_size.w..win_size.w) as f32,
             rng.gen_range(-win_size.h..win_size.h) as f32,
-            (rng.gen_range(0..360) as f32) * (PI / 180.),
+            angle.cos() * BOID_SPEED,
+            angle.sin() * BOID_SPEED,
         );
     }
 }
@@ -100,8 +103,15 @@ fn movable_system(
     let time_delta = time.delta_seconds();
     for (velocity, mut transform) in query.iter_mut() {
         // Get X and Y components
-        let x = velocity.magnitude * velocity.angle.cos() * time_delta;
-        let y = velocity.magnitude * velocity.angle.sin() * time_delta;
+        let x = velocity.x * time_delta;
+        let y = velocity.y * time_delta;
+        let angle = (if velocity.x == 0. {
+            0.
+        } else {
+            velocity.y / velocity.x
+        })
+        .atan() + if velocity.x < 0. {PI} else {0.};
+
 
         // Update position
         let translation = &mut transform.translation;
@@ -111,7 +121,14 @@ fn movable_system(
         translation.x = wrap(translation.x, -win_size.w / 2., win_size.w / 2.);
         translation.y = wrap(translation.y, -win_size.h / 2., win_size.h / 2.);
 
-        transform.rotation = Quat::from_rotation_z(velocity.angle + BOID_ROTATE_OFFSET);
+        println!(
+            "x:{}, y:{}, angle:{}",
+            velocity.x,
+            velocity.y,
+            angle * (180. / PI)
+        );
+
+        transform.rotation = Quat::from_rotation_z(angle + BOID_ROTATE_OFFSET);
     }
 }
 
@@ -124,17 +141,27 @@ fn update_boid_system(
     let rotation_speed = PI / 2.;
 
     let rotation_delta = if keyboard_input.pressed(KeyCode::A) {
-        rotation_speed * time_delta
-    } else if keyboard_input.pressed(KeyCode::D) {
         -rotation_speed * time_delta
+    } else if keyboard_input.pressed(KeyCode::D) {
+        rotation_speed * time_delta
     } else {
         0.
     };
 
     for mut velocity in query.iter_mut() {
-        velocity.angle += rotation_delta;
-        velocity.angle %= 2. * PI;
+        let rotation = rotate(rotation_delta, velocity.x, velocity.y);
+        velocity.x = rotation.0;
+        velocity.y = rotation.1;
     }
+}
+
+fn rotate(angle: f32, x: f32, y: f32) -> (f32, f32) {
+    let s = angle.sin();
+    let c = angle.cos();
+
+    let x_prime = x * c + y * s;
+    let y_prime = -x * s + y * c;
+    (x_prime, y_prime)
 }
 
 fn wrap(val: f32, min: f32, max: f32) -> f32 {
